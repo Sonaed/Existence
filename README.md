@@ -12,3 +12,7 @@ Des WormHole seront etable entre les univers pour les communication interunivers
 et surement d'auter truc, je fais en fonction de mes besoins 
 
 <img width="1211" height="718" alt="image" src="https://github.com/user-attachments/assets/919596c1-b393-4e7b-a98e-a00f16261a1b" />
+
+===================En Cours===================
+Preparation du terrain pour l'installateur des differents univers via Existence 
+Brainstorming plus poussé sur l'avenir et la difficulté de mise en place des modules gravitationnel 
