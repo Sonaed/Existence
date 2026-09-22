@@ -10,3 +10,5 @@ Le visuel final sera chaque app 1 univers avec le utilitaier qui vont visuelleme
 Des WormHole seront etable entre les univers pour les communication interunivers et la centralisation des idée brainstorm dans le Cosmos (qui aura accées du coup au autre univers graphique 
 
 et surement d'auter truc, je fais en fonction de mes besoins 
+
+<img width="1211" height="718" alt="image" src="https://github.com/user-attachments/assets/919596c1-b393-4e7b-a98e-a00f16261a1b" />
