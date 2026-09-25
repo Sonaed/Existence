@@ -16,3 +16,9 @@ et surement d'auter truc, je fais en fonction de mes besoins
 ===================En Cours===================
 Preparation du terrain pour l'installateur des differents univers via Existence 
 Brainstorming plus poussé sur l'avenir et la difficulté de mise en place des modules gravitationnel 
+----------------------------------------------
+Stabilisation:
+Systeme de branchage de module/orbite en stabilisation, semi fonctionnel sur certain modules
+Consolidation de l'architecture
+Développement des Wormhole
+Centralisation des ressources pour une utilisation inter-logiciel 
