@@ -391,7 +391,7 @@ package() {{
   done
   find "$home" -name '__pycache__' -prune -exec rm -rf {{}} +
   rm -rf "$home/native/build/CMakeFiles" 2>/dev/null || true
-  python -m compileall -q "$home" >/dev/null 2>&1 || true
+  python -m compileall -q -s "$pkgdir" -p / "$home" >/dev/null 2>&1 || true
   install -Dm755 "$startdir/existence-{app.id}" "$pkgdir/usr/bin/existence-{app.id}"
   install -Dm644 "$startdir/existence-{app.id}.desktop" "$pkgdir/usr/share/applications/existence-{app.id}.desktop"
   install -Dm644 "$startdir/existence-{app.id}.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/existence-{app.id}.svg"
