@@ -1,0 +1,82 @@
+{
+  "format": "ExistenceCatalog",
+  "version": 1,
+  "remote": "",
+  "_note": "Quand les apps seront sur GitHub : renseigne git_url (et version) ici, ou mets dans 'remote' l'URL brute d'un catalogue publié (même format) pour que tout le monde reçoive les mises à jour.",
+  "apps": [
+    {
+      "id": "nebula",
+      "kind": "universe",
+      "git_url": "",
+      "launch": [
+        "python",
+        "main.py"
+      ]
+    },
+    {
+      "id": "atlas",
+      "kind": "universe",
+      "git_url": ""
+    },
+    {
+      "id": "cosmos",
+      "kind": "universe",
+      "git_url": ""
+    },
+    {
+      "id": "stardust",
+      "kind": "universe",
+      "git_url": "",
+      "launch": [
+        "python",
+        "main.py"
+      ]
+    },
+    {
+      "id": "singularity",
+      "kind": "module",
+      "host": "nebula",
+      "standalone": true,
+      "git_url": "",
+      "launch": [
+        "python",
+        "webready.py"
+      ]
+    },
+    {
+      "id": "fusion_creator",
+      "kind": "module",
+      "host": "stardust",
+      "bundled": true
+    },
+    {
+      "id": "palette_creator",
+      "kind": "module",
+      "host": "stardust",
+      "bundled": true
+    },
+    {
+      "id": "gradient_creator",
+      "kind": "module",
+      "host": "stardust",
+      "bundled": true
+    },
+    {
+      "id": "nova",
+      "kind": "module",
+      "host": "nebula",
+      "standalone": true,
+      "git_url": "",
+      "launch": [
+        "python",
+        "main.py"
+      ]
+    },
+    {
+      "id": "pixel_art",
+      "kind": "module",
+      "host": "nebula",
+      "bundled": true
+    }
+  ]
+}
