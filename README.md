@@ -22,3 +22,6 @@ Systeme de branchage de module/orbite en stabilisation, semi fonctionnel sur cer
 Consolidation de l'architecture
 Développement des Wormhole
 Centralisation des ressources pour une utilisation inter-logiciel 
+
+Preview: 
+<img width="2559" height="1399" alt="image" src="https://github.com/user-attachments/assets/9bb60f94-5f8e-4c26-825a-775460ab9883" />
