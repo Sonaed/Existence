@@ -11,5 +11,5 @@ Des WormHole seront etable entre les univers pour les communication interunivers
 
 et surement d'auter truc, je fais en fonction de mes besoins 
 
-Preview: 
-<img width="2559" height="1399" alt="image" src="https://github.com/user-attachments/assets/9bb60f94-5f8e-4c26-825a-775460ab9883" />
+Preview of the futur catalogue: 
+<img width="2546" height="1394" alt="image" src="https://github.com/user-attachments/assets/fad4cc7c-6806-4ea8-9d46-8c86aab2f318" />
