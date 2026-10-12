@@ -7,29 +7,58 @@
     {
       "id": "nebula",
       "kind": "universe",
-      "git_url": "",
+      "git_url": "https://github.com/Sonaed/Nebula.git",
       "launch": [
         "python",
         "main.py"
-      ]
+      ],
+      "version": "26.4.0"
     },
     {
       "id": "atlas",
       "kind": "universe",
-      "git_url": ""
+      "git_url": "https://github.com/Sonaed/Atlas.git",
+      "version": "26.0.0",
+      "launch": [
+        "build_atlas/CreativeSystemAtlasGtk"
+      ]
     },
     {
       "id": "cosmos",
       "kind": "universe",
-      "git_url": ""
+      "git_url": "https://github.com/Sonaed/Cosmos.git",
+      "version": "26.0.0",
+      "launch": [
+        "bash",
+        "start-desktop.sh"
+      ]
     },
     {
       "id": "stardust",
       "kind": "universe",
-      "git_url": "",
+      "git_url": "https://github.com/Sonaed/StarDust.git",
       "launch": [
         "python",
         "main.py"
+      ],
+      "version": "26.1.0"
+    },
+    {
+      "id": "ephemeris",
+      "kind": "universe",
+      "git_url": "https://github.com/Sonaed/Ephemeris.git",
+      "launch": [
+        "python",
+        "ephemeris.py"
+      ],
+      "version": "26.2.0"
+    },
+    {
+      "id": "pulsar",
+      "kind": "universe",
+      "git_url": "",
+      "launch": [
+        "build/Pulsar"
       ]
     },
     {
@@ -37,11 +66,12 @@
       "kind": "module",
       "host": "nebula",
       "standalone": true,
-      "git_url": "",
+      "git_url": "https://github.com/Sonaed/Singularity.git",
       "launch": [
         "python",
         "webready.py"
-      ]
+      ],
+      "version": "26.1.0"
     },
     {
       "id": "fusion_creator",
@@ -62,20 +92,40 @@
       "bundled": true
     },
     {
+      "id": "script_creator",
+      "kind": "module",
+      "host": "stardust",
+      "bundled": true
+    },
+    {
       "id": "nova",
       "kind": "module",
       "host": "nebula",
       "standalone": true,
-      "git_url": "",
+      "git_url": "https://github.com/Sonaed/Nova.git",
       "launch": [
         "python",
         "main.py"
-      ]
+      ],
+      "version": "26.3.0"
     },
     {
       "id": "pixel_art",
       "kind": "module",
       "host": "nebula",
+      "bundled": true
+    },
+    {
+      "id": "concept_studio",
+      "kind": "module",
+      "host": "nebula",
+      "bundled": true,
+      "version": "0.1.0"
+    },
+    {
+      "id": "texture_creator",
+      "kind": "module",
+      "host": "stardust",
       "bundled": true
     }
   ]

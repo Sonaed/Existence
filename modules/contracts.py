@@ -13,6 +13,40 @@ import json
 import subprocess
 from pathlib import Path
 
+
+@dataclass(frozen=True)
+class Capability:
+    """Stable capability token exchanged between apps and modules."""
+    id: str
+    version: str = "1"
+    optional: bool = False
+
+
+@dataclass(frozen=True)
+class ServiceContract:
+    id: str
+    version: str
+    capabilities: tuple[str, ...] = ()
+    endpoint: str = ""
+
+
+@dataclass(frozen=True)
+class UniverseContract:
+    id: str
+    version: str
+    services: tuple[str, ...] = ()
+    capabilities: tuple[str, ...] = ()
+
+
+def contract_version_compatible(required: str, provided: str) -> bool:
+    """Compatibility rule: same major version, provider not older."""
+    try:
+        req = tuple(int(x) for x in str(required).split(".")[:2])
+        got = tuple(int(x) for x in str(provided).split(".")[:2])
+        return req[0] == got[0] and got >= req
+    except (TypeError, ValueError):
+        return str(required) == str(provided)
+
 # Formes de protocole actuellement comprises par Existence. Les manifests
 # historiques utilisent deux chaînes et Nebula utilise un descripteur détaillé.
 SUPPORTED_PROTOCOLS = {"existence.v1", "existence.contract.v1"}

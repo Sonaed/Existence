@@ -4,7 +4,7 @@ from modules.protocol import ModuleManifest
 MANIFEST = ModuleManifest(
     id="fusion_creator",
     name="Fusion Creator",
-    version="26.0",
+    version="26.1.0",
     module_type="existence_module",
     accepts=("fusion", "blend_result", "blend_definition", "image", "layer", "selection", "mask"),
     emits=("blend_result", "blend_definition"),

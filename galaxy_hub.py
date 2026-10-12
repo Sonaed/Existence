@@ -51,9 +51,10 @@ from existence_ipc import ExistenceIPCRouter, ProcessEndpoint
 #  CONFIG & PALETTE
 # ══════════════════════════════════════════════════════════════
 
-APP_VERSION  = "26.0"  # schéma écosystème <année>.<release>
+APP_VERSION  = "26.1.1"  # schéma écosystème <année>.<release>
 ECOSYSTEM_RELEASE = APP_VERSION
-CONFIG_DIR   = Path.home() / ".config" / "existence"
+CONFIG_DIR   = Path(os.environ.get("EXISTENCE_CONFIG_HOME", "").strip() or
+                    (Path.home() / ".config" / "existence"))
 CONFIG_FILE  = CONFIG_DIR / "apps.json"
 EVENT_LOG_FILE = CONFIG_DIR / "events.json"
 RESOURCE_REGISTRY_FILE = CONFIG_DIR / "resources.json"
@@ -88,9 +89,9 @@ ECOSYSTEM_ID = "existence"
 # Identifiants stables de l'écosystème. Les noms affichés peuvent évoluer,
 # mais ces identifiants servent de pont entre catalogue, IPC, sessions et URI.
 CANONICAL_IDS = {
-    "existence", "nebula", "atlas", "cosmos", "singularity", "stardust",
-    "fusion_creator", "resource_center", "palette_creator", "gradient_creator",
-    "pixel_art", "nova",
+    "existence", "nebula", "atlas", "cosmos", "ephemeris", "singularity", "stardust",
+    "fusion_creator", "resource_center", "palette_creator", "gradient_creator", "script_creator", "texture_creator",
+    "pixel_art", "concept_studio", "nova", "pulsar",
 }
 IDENTIFIER_ALIASES = {
     "blend_creator": "fusion_creator",
@@ -103,6 +104,8 @@ IDENTIFIER_ALIASES = {
     "webready": "singularity",
     "palette-creator": "palette_creator",
     "gradient-creator": "gradient_creator",
+    "script-creator": "script_creator",
+    "texture-creator": "texture_creator",
     "pixel-art": "pixel_art",
 }
 # Modules Creator branchables sur StarDust : id → types de ressources liés.
@@ -112,6 +115,8 @@ STARDUST_CREATOR_MODULES = {
     "fusion_creator": ("blend_definition", "blend_result"),
     "palette_creator": ("palette",),
     "gradient_creator": ("gradient",),
+    "script_creator": ("user_script",),
+    "texture_creator": ("procedural_texture", "textures", "brushes"),
 }
 STRUCTURE_FILTERS = ["Toutes", "Univers", "Modules", "Services", "Infrastructure"]
 APP_KIND_LABELS = {
@@ -200,6 +205,20 @@ def set_module_hosts(app_data: dict, hosts: List[str]) -> None:
 
 
 STANDALONE_MODULES = {"nova", "singularity"}
+
+# Sources first-party shown in the catalogue and used by the main hub when an
+# ecosystem application has not yet been installed.  Keeping this allow-list
+# here prevents an old per-user configuration from turning installation into a
+# vague manual setup step.
+OFFICIAL_SOURCES = {
+    "nebula": "https://github.com/Sonaed/Nebula.git",
+    "atlas": "https://github.com/Sonaed/Atlas.git",
+    "cosmos": "https://github.com/Sonaed/Cosmos.git",
+    "stardust": "https://github.com/Sonaed/StarDust.git",
+    "ephemeris": "https://github.com/Sonaed/Ephemeris.git",
+    "nova": "https://github.com/Sonaed/Nova.git",
+    "singularity": "https://github.com/Sonaed/Singularity.git",
+}
 
 
 def is_standalone(app_data: dict) -> bool:
@@ -349,14 +368,28 @@ def is_universe(app_data: dict) -> bool:
     return app_data.get("app_kind") == "universe"
 
 
-def atomic_write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def atomic_write_json(path: Path, data: Any) -> bool:
+    """Durably persist state without letting an unavailable profile crash the hub.
+
+    A read-only home directory can happen in a portable session or a sandbox.
+    The current session remains usable; callers can surface ``last_error`` when
+    they need to explain that preferences were not retained.
+    """
     tmp_path = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_path, path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+        return True
+    except OSError:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+        return False
 
 
 class WorkspaceSessionManager:
@@ -1395,6 +1428,56 @@ DEFAULT_APPS: List[Dict] = [
         ],
     },
     {
+        "id":           "ephemeris",
+        "manifest_path": str(_app_dir("ephemeris") / "existence-manifest.json"),
+        "name":         "Ephemeris",
+        "description":  "Alternative libre à InDesign : mise en page, typographie, composition de documents et publication dans l'écosystème Existence.",
+        "category":     "Création",
+        "icon_emoji":   "▤",
+        "icon_path":    "",
+        "accent_color": "#60A5FA",
+        "version":      "26.1.0",
+        "installed":    True,
+        "exec_path":    _launcher("ephemeris") or _python(),
+        "exec_args":    [] if _launcher("ephemeris") else [str(_app_dir("ephemeris") / "ephemeris.py")],
+        "working_dir":  str(_app_dir("ephemeris")),
+        "install_type": "manual",
+        "install_script": "",
+        "git_url":      "",
+        "tags":         ["ephemeris", "indesign", "mise-en-page", "typographie", "publication", "pdf"],
+        "app_kind":     "universe",
+        "capabilities": ["desktop_publishing", "page_layout", "typography", "document_composition", "pdf_export", "resource_authoring"],
+        "resource_types": ["document", "publication", "layout", "template", "image", "pdf", "project"],
+        "accepted_messages": ["resource", "resource_bundle", "reference_project", "send_resource"],
+        "emitted_messages": ["resource", "resource_bundle", "publication", "send_resource"],
+        "permissions": ["read_resource", "write_resource", "reference_resource", "send_message", "launch_universe"],
+    },
+    {
+        "id":           "pulsar",
+        "manifest_path": str(_app_dir("pulsar") / "existence-manifest.json"),
+        "name":         "Pulsar",
+        "description":  "Compositing et animation : timeline multi-calques, keyframes, vidéo et audio, aperçu Vulkan. Export via Singularity.",
+        "category":     "Création",
+        "icon_emoji":   "✹",
+        "icon_path":    "",
+        "accent_color": "#F43F5E",
+        "version":      "26.0",
+        "installed":    True,
+        "exec_path":    _launcher("pulsar") or _native("pulsar", "Pulsar", "build"),
+        "exec_args":    [],
+        "working_dir":  str(_app_dir("pulsar")),
+        "install_type": "manual",
+        "install_script": "",
+        "git_url":      "",
+        "tags":         ["pulsar", "compositing", "vidéo", "vulkan", "motion", "univers"],
+        "app_kind":     "universe",
+        "capabilities": ["compositing", "keyframe_animation", "video_import", "audio_import", "audio_playback", "gpu_viewer", "project_json", "render_job_export"],
+        "resource_types": ["composition", "image", "video", "audio", "project", "render_job"],
+        "accepted_messages": ["send_resource"],
+        "emitted_messages": [],
+        "permissions": ["read_resource", "write_resource", "reference_resource", "send_message", "launch_universe"],
+    },
+    {
         "id": "fusion_creator", "name": "Créateur de fusion",
         "description": "Module de fusion avancée branchable sur StarDust pour construire des définitions de fusion.",
         "category": "Création", "icon_emoji": "◈", "icon_path": "",
@@ -1434,6 +1517,32 @@ DEFAULT_APPS: List[Dict] = [
         "orbit_relation": "available_from",
     },
     {
+        "id": "texture_creator", "name": "Texture Creator",
+        "description": "Procedural geometry nodes for seamless textures, SVG artwork and bitmap brush tips. No imported images.",
+        "category": "Création", "icon_emoji": "▦", "icon_path": "",
+        "accent_color": "#78D6B8", "version": "26.2.0", "installed": True,
+        "exec_path": "", "exec_args": [], "working_dir": "", "install_type": "system",
+        "install_script": "", "git_url": "", "tags": ["stardust", "texture", "geometry", "nodes", "module"],
+        "orbit_of": "stardust", "app_kind": "orbital_module",
+        "capabilities": ["procedural_texture", "creator_interface", "vector_generation", "brush_tip"],
+        "resource_types": ["procedural_texture", "image", "vector", "brushes"],
+        "accepted_messages": ["resource"], "emitted_messages": ["resource"],
+        "permissions": ["read_resource", "write_resource"], "orbit_relation": "available_from",
+    },
+    {
+        "id": "script_creator", "name": "Script Creator",
+        "description": "Atelier StarDust des scripts utilisateurs. Existence conserve les manifests, permissions, versions, journaux et exécution.",
+        "category": "Développement", "icon_emoji": "⌘", "icon_path": "",
+        "accent_color": "#8C9EFF", "version": "26.1.0", "installed": True,
+        "exec_path": "", "exec_args": [], "working_dir": "", "install_type": "system",
+        "install_script": "", "git_url": "", "tags": ["stardust", "scripts", "existence", "module"],
+        "orbit_of": "stardust", "app_kind": "orbital_module",
+        "capabilities": ["script_authoring", "creator_interface", "script_validation"],
+        "resource_types": ["user_script", "script_test_report"],
+        "accepted_messages": ["resource"], "emitted_messages": ["user_script"],
+        "permissions": ["read_resource", "write_resource"], "orbit_relation": "available_from",
+    },
+    {
         "id": "pixel_art", "name": "Pixel Art",
         "description": "Module pixel art pour Nebula : crayon pixel-perfect, palettes verrouillées, tramage, grilles, tuiles en boucle et export net ×N / PNG indexé.",
         "category": "Création", "icon_emoji": "▦", "icon_path": "",
@@ -1444,6 +1553,20 @@ DEFAULT_APPS: List[Dict] = [
         "capabilities": ["pixel_art", "palette_lock", "tile_mode"],
         "resource_types": ["image", "palette"],
         "accepted_messages": ["send_resource"], "emitted_messages": [],
+        "orbit_relation": "available_from",
+    },
+    {
+        "id": "concept_studio", "name": "Concept Studio",
+        "description": "Atelier de concept art pour Nebula : photobashing, matte painting, références, valeurs, atmosphère et passes de lumière.",
+        "category": "Création", "icon_emoji": "◈", "icon_path": "",
+        "accent_color": "#F472B6", "version": "0.1.0", "installed": True,
+        "exec_path": "", "exec_args": [], "working_dir": "", "install_type": "system",
+        "install_script": "", "git_url": "", "tags": ["nebula", "concept-art", "photobashing", "matte-painting"],
+        "orbit_of": "nebula", "app_kind": "orbital_module",
+        "capabilities": ["reference_board", "photobashing_workflow", "matte_painting_workflow", "value_check", "light_direction_planning"],
+        "resource_types": ["image", "reference", "layer", "concept_art"],
+        "accepted_messages": ["send_resource", "reference_project"], "emitted_messages": [],
+        "permissions": ["read_resource", "write_resource", "reference_resource"],
         "orbit_relation": "available_from",
     },
     {
@@ -1493,12 +1616,12 @@ DEFAULT_APPS: List[Dict] = [
         "manifest_path": str(_app_dir("singularity") / "existence-manifest.json"),
         "description": "Univers de traitements et transformations pour les ressources produites ailleurs.",
         "category": "Utilitaires", "icon_emoji": "◉", "icon_path": "",
-        "accent_color": "#FFB45B", "version": "26.0", "installed": True,
+        "accent_color": "#FFB45B", "version": "26.1.0", "installed": True,
         "exec_path": _launcher("singularity") or _python(), "exec_args": [] if _launcher("singularity") else ["webready.py"], "working_dir": str(_app_dir("singularity")), "install_type": "manual",
         "install_script": "", "git_url": "", "tags": ["outil", "nebula", "création"],
         "orbit_of": "nebula",
         "app_kind": "orbital_module",
-        "capabilities": ["image_processing", "resource_transformation", "receive_nebula_resource"],
+        "capabilities": ["image_processing", "resource_transformation", "receive_nebula_resource", "static_image_export", "batch_export_queue", "export_presets", "export_reports", "jpeg_export", "png_export", "webp_export"],
         "resource_types": ["image", "file", "project"],
         "accepted_messages": ["process_resource", "send_resource"],
         "emitted_messages": ["send_resource"],
@@ -1508,6 +1631,8 @@ DEFAULT_APPS: List[Dict] = [
 ]
 
 for _default_app in DEFAULT_APPS:
+    if _default_app["id"] in OFFICIAL_SOURCES:
+        _default_app["git_url"] = OFFICIAL_SOURCES[_default_app["id"]]
     normalize_contract(_default_app)
 
 SYSTEM_APP_IDS = {app["id"] for app in DEFAULT_APPS if app.get("system_role")}
@@ -1520,7 +1645,12 @@ SYSTEM_APP_IDS = {app["id"] for app in DEFAULT_APPS if app.get("system_role")}
 class ConfigManager:
     def __init__(self):
         self.last_error = ""
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            # A portable/read-only session still gets a fully usable in-memory
+            # catalogue; only persistence is unavailable for that session.
+            self.last_error = str(exc)
         if not CONFIG_FILE.exists():
             # Récupère le catalogue existant au premier lancement d'Existence.
             if LEGACY_CONFIG_FILE.exists():
@@ -1602,6 +1732,11 @@ class ConfigManager:
                 for default_app in DEFAULT_APPS:
                     if default_app["id"] not in known_ids:
                         apps.append(dict(default_app))
+                        # Un module ajouté par une mise à jour doit être
+                        # persisté dans le catalogue utilisateur. Sans cela,
+                        # il n'apparaît qu'en mémoire et disparaît au prochain
+                        # lancement (cas des nouveaux Creators).
+                        migration_changed = True
                 for app in apps:
                     default = next((a for a in DEFAULT_APPS if a["id"] == app.get("id")), None)
                     if not default:
@@ -1654,6 +1789,9 @@ class ConfigManager:
                         app["permissions"] = list(default.get("permissions", []))
                     app.setdefault("existence_min_version", default.get("existence_min_version", APP_VERSION))
                     app.setdefault("working_dir", default.get("working_dir", ""))
+                    if not app.get("git_url") and default.get("git_url"):
+                        app["git_url"] = default["git_url"]
+                        migration_changed = True
                     app.setdefault("manifest_path", default.get("manifest_path", ""))
                     app.setdefault("manifest_command", default.get("manifest_command", []))
                     if app.get("id") in {"atlas", "nebula", "cosmos", "singularity"} and not app.get("exec_path"):
@@ -1708,11 +1846,10 @@ class ConfigManager:
     def save(self, apps: List[Dict]) -> None:
         for app in apps:
             normalize_contract(app)
-        try:
-            atomic_write_json(CONFIG_FILE, apps)
+        if atomic_write_json(CONFIG_FILE, apps):
             self.last_error = ""
-        except OSError as exc:
-            self.last_error = str(exc)
+        else:
+            self.last_error = f"Impossible d’enregistrer le catalogue dans {CONFIG_FILE}."
 
 
 class AppReadiness:
@@ -1728,7 +1865,18 @@ def is_app_installed(app_data: dict) -> bool:
     if not app_data.get("installed") or not exec_path:
         return False
     path = Path(exec_path).expanduser()
-    return path.exists() or shutil.which(exec_path) is not None
+    working_dir = Path(app_data.get("working_dir", "")).expanduser()
+    executable_ready = (path.exists() or (not path.is_absolute() and working_dir.is_dir() and (working_dir / path).exists())
+                        or shutil.which(exec_path) is not None)
+    if not executable_ready:
+        return False
+    # Interpreters can exist while the application's entry script does not.
+    # Treat that partial state as downloaded-but-not-ready instead of claiming
+    # the app can be opened and showing a process error afterward.
+    args = list(app_data.get("exec_args") or [])
+    if args and working_dir.is_dir() and Path(args[0]).suffix in {".py", ".sh"}:
+        return (working_dir / args[0]).is_file()
+    return True
 
 
 def verify_app_readiness(app_data: dict) -> Tuple[str, str]:
@@ -2002,7 +2150,7 @@ class AppCard(QFrame):
             """)
             self.action_btn.clicked.connect(lambda: self.launch_requested.emit(self.app_data))
         else:
-            self.action_btn.setText("⚙  Configurer")
+            self.action_btn.setText("⇩  Installer" if self.app_data.get("git_url") else "⚙  Configurer")
             self.action_btn.setStyleSheet(f"""
                 QPushButton{{background:{C['surface_h']};color:{C['text2']};border:1px solid {C['border']};
                              border-radius:8px;font-size:12px;font-weight:600;}}
@@ -4224,6 +4372,19 @@ class GalaxyHub(QMainWindow):
     def _install_app(self, app_data: dict):
         script = app_data.get("install_script", "").strip()
         if not script:
+            # The primary map and the catalogue share one installation path.
+            # A direct activation on an uninstalled official app is therefore
+            # just as capable as the Catalogue button, including staging,
+            # cancellation cleanup and manifest discovery.
+            source = app_data.get("git_url", "").strip()
+            if source:
+                center = self.open_existence_center("catalog")
+                page = center.pages.get("catalog")
+                entry = next((item for item in getattr(page, "catalog", [])
+                              if item.get("id") == app_data.get("id")), None)
+                if entry is not None:
+                    page.install(entry)
+                    return
             QMessageBox.information(
                 self, "Installation à préparer",
                 "Cette app a une source connue, mais aucun script d'installation local n'est encore configuré.",
@@ -4339,6 +4500,7 @@ class GalaxyHub(QMainWindow):
         center.show()
         center.raise_()
         center.activateWindow()
+        return center
 
     def _run_system_module(self, role: str):
         if role in {"core", "installer"}:

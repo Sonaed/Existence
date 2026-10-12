@@ -33,11 +33,13 @@ DOCUMENTS = Path(__file__).resolve().parent.parent
 
 # id attendu -> chemin du manifest, relatif à Documents/.
 MANIFESTS = {
+    "atlas": "Atlas/existence-manifest.json",
     "nebula": "Nebula/EXISTENCE/manifest.json",
     "cosmos": "Cosmos/existence-manifest.json",
     "stardust": "StarDust/existence-manifest.json",
     "singularity": "Singularity/existence-manifest.json",
     "nova": "Nova/existence-manifest.json",
+    "pulsar": "Pulsar/existence-manifest.json",
 }
 
 

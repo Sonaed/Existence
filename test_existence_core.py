@@ -133,7 +133,7 @@ class ExistenceCoreTests(unittest.TestCase):
             apps["atlas"]["exec_path"],
             "/home/deanos/Documents/Atlas/build_atlas/CreativeSystemAtlasGtk",
         )
-        self.assertEqual(apps["nebula"]["exec_path"], "python")
+        self.assertTrue(apps["nebula"]["exec_path"].endswith("python"))
         self.assertEqual(apps["nebula"]["exec_args"], ["main.py"])
         self.assertEqual(apps["nebula"]["working_dir"], "/home/deanos/Documents/Nebula")
 
@@ -228,8 +228,8 @@ class ExistenceCoreTests(unittest.TestCase):
 
     def test_existence_modules_expose_hostable_capabilities(self):
         registry = default_registry()
-        self.assertEqual(set(EXISTENCE_MODULES), {"fusion_creator", "resource_center", "palette_creator", "gradient_creator", "pixel_art"})
-        self.assertEqual({m.id for m in registry.creators_for("stardust")}, {"palette_creator", "gradient_creator"})
+        self.assertEqual(set(EXISTENCE_MODULES), {"fusion_creator", "resource_center", "palette_creator", "gradient_creator", "pixel_art", "script_creator", "texture_creator"})
+        self.assertEqual({m.id for m in registry.creators_for("stardust")}, {"palette_creator", "gradient_creator", "script_creator", "texture_creator"})
         self.assertEqual(registry.manifest("palette_creator").file_extension, "cspl")
         self.assertEqual(registry.manifest("gradient_creator").interface_protocol, "existence.creator.v1")
         self.assertEqual(registry.manifest("fusion_creator").module_type, "existence_module")

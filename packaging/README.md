@@ -52,4 +52,13 @@ Existence repère tout seul les apps installées par paquet et le catalogue affi
    ```
    `[trusted=yes]` saute la signature ; pour signer le dépôt plus tard : `apt-ftparchive` + `gpg --clearsign`.
 
-**Nouvelle version** : change `VERSION` (ex. `26.1`) dans `build_packages.py`, tague `v26.1`, reconstruis, republie.
+**Nouvelle version** : change `VERSION` (ex. `26.1`) dans `build_packages.py`, tague `v26.1`, reconstruis, puis génère et signe le manifeste :
+
+```bash
+SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) \
+  python packaging/release.py packaging/dist --version 26.1 --output packaging/dist/release-manifest.json --sign
+```
+
+Les dépôts APT de production doivent publier leurs métadonnées signées et ne
+doivent jamais utiliser `[trusted=yes]`. Pour une mise à jour locale, utiliser
+`packaging/update.sh` avec un paquet et sa signature `.asc`.

@@ -17,7 +17,8 @@ from pathlib import Path
 SYSTEM_ROOT = Path("/usr/share/existence")
 APP_FOLDERS = {
     "existence": "Existence", "nebula": "Nebula", "atlas": "Atlas", "cosmos": "Cosmos",
-    "stardust": "StarDust", "singularity": "Singularity", "nova": "Nova",
+    "stardust": "StarDust", "ephemeris": "Ephemeris", "singularity": "Singularity", "nova": "Nova",
+    "pulsar": "Pulsar",
 }
 
 

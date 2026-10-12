@@ -27,10 +27,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 INDEX_NAME = "library.json"
-INDEX_VERSION = 1
+INDEX_VERSION = 2
 
 # Applications connues de l'écosystème (ids canoniques Existence).
-KNOWN_APPS = ("nebula", "stardust", "atlas", "cosmos", "singularity", "nova")
+KNOWN_APPS = ("nebula", "stardust", "atlas", "cosmos", "singularity", "nova", "ephemeris")
 
 # Qui peut utiliser quoi par défaut. Modifiable ressource par ressource.
 DEFAULT_APPS_BY_KIND: dict[str, tuple[str, ...]] = {
@@ -78,6 +78,7 @@ class SharedLibrary:
         try:
             data = json.loads(self.index_path.read_text(encoding="utf-8"))
             if isinstance(data, dict) and isinstance(data.get("entries"), dict):
+                data.setdefault("version", INDEX_VERSION)
                 return data
         except (OSError, ValueError):
             pass
@@ -99,6 +100,9 @@ class SharedLibrary:
         entry.setdefault("name", path.stem)
         entry.setdefault("owner", "")
         entry.setdefault("tags", [])
+        entry.setdefault("dependencies", [])
+        entry.setdefault("permissions", {"read": list(entry["apps"]), "write": [entry.get("owner", "")] if entry.get("owner") else []})
+        entry.setdefault("format_version", 1)
         entry["kind"] = kind
         entry["path"] = str(path)
         entry["key"] = self._key(path)
@@ -142,6 +146,8 @@ class SharedLibrary:
             "name": name or record.get("name") or path.stem,
             "updated_at": time.time(),
         })
+        record.setdefault("dependencies", [])
+        record.setdefault("format_version", 1)
         record.setdefault("added_at", time.time())
         if extra:
             record.update(extra)
@@ -188,6 +194,35 @@ class SharedLibrary:
         path = Path(path)
         entry = self.entry(path)
         return self._register(path, apps, entry.get("owner", ""), entry.get("name"))
+
+    def set_dependencies(self, path: str | Path, dependencies: Iterable[str]) -> dict[str, Any]:
+        entry = self.entry(path)
+        return self._register(Path(path), entry.get("apps", []), entry.get("owner", ""), entry.get("name"),
+                              {"dependencies": sorted(set(str(x) for x in dependencies))})
+
+    def can_access(self, path: str | Path, app: str, access: str = "read") -> bool:
+        entry = self.entry(path)
+        permissions = entry.get("permissions", {})
+        allowed = permissions.get(access, entry.get("apps", [])) if isinstance(permissions, dict) else entry.get("apps", [])
+        return app in allowed or "*" in allowed
+
+    def export_manifest(self, path: str | Path) -> dict[str, Any]:
+        entry = self.entry(path)
+        return {"format": "ExistenceResource", "version": 1, "uri": entry["uri"],
+                "kind": entry["kind"], "name": entry["name"], "resource_version": entry.get("version", 1),
+                "dependencies": entry.get("dependencies", []), "permissions": entry.get("permissions", {})}
+
+    def repair_dependencies(self) -> list[dict[str, Any]]:
+        """Return actionable diagnostics for missing resource dependencies."""
+        by_uri = {e["uri"]: e for e in self.entries()}
+        findings = []
+        for entry in self.entries():
+            for dependency in entry.get("dependencies", []):
+                dep = by_uri.get(str(dependency))
+                if dep is None:
+                    findings.append({"resource": entry["uri"], "dependency": str(dependency),
+                                     "status": "missing", "action": "restore-or-reimport"})
+        return findings
 
     def forget(self, path: str | Path) -> None:
         data = self._read_index()

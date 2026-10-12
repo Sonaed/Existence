@@ -4,7 +4,7 @@ from modules.protocol import ModuleManifest
 MANIFEST = ModuleManifest(
     id="gradient_creator",
     name="Gradient Creator",
-    version="26.0",
+    version="26.1.0",
     module_type="existence_module",
     accepts=("gradient", "palette", "color"),
     emits=("gradient",),

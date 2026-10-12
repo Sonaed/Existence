@@ -38,10 +38,18 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import shlex
+
+def arch_names(values: list[str]) -> str:
+    return " ".join(shlex.quote(v) for v in values)
+
 HERE = Path(__file__).resolve().parent
 EXISTENCE = HERE.parent
 DOCUMENTS = Path(os.environ.get("EXISTENCE_SOURCES", Path.home() / "Documents"))
-VERSION = "26.0"
+if str(EXISTENCE) not in sys.path:
+    sys.path.insert(0, str(EXISTENCE))
+from version import SUITE_VERSION
+VERSION = SUITE_VERSION
 RELEASE = "1"
 MAINTAINER = os.environ.get("EXISTENCE_MAINTAINER", "Deanos <deanos@localhost>")
 PREFIX = "/usr/share/existence"
@@ -85,7 +93,7 @@ QT_DEB_RUNTIME = ["libqt6core6t64 | libqt6core6", "libqt6gui6t64 | libqt6gui6"]
 APPS: dict[str, App] = {a.id: a for a in [
     App("existence", "Existence", "Existence", "Carte des univers créatifs, ressources partagées et wormholes",
         "Graphics;Utility;", "#A5B4FC", "E", ["python3", "galaxy_hub.py"],
-        PY_ARCH, PY_DEB + ["python3-pyside6.qtsvg", "python3-pyside6.qtsvgwidgets"],
+        PY_ARCH + ["python-numpy"], PY_DEB + ["python3-pyside6.qtsvg", "python3-pyside6.qtsvgwidgets", "python3-numpy"],
         arch_optdepends=["qt6-webengine: vue Cosmos intégrée", "git: installation d'apps depuis le catalogue"],
         deb_recommends=["python3-pyside6.qtwebenginewidgets", "git"]),
     App("nebula", "Nebula", "Nebula", "Peinture numérique — moteur de pinceaux C++",
@@ -352,7 +360,7 @@ def meta_deb(out: Path) -> Path:
 
 # ── Arch / AUR ───────────────────────────────────────────────
 def arch_names(values: list[str]) -> str:
-    return " ".join(f"'{v}'" for v in values)
+    import shlex; return " ".join(shlex.quote(v) for v in values)
 
 
 def pkgbuild(app: App, source_line: str, checksum: str, srcdir_name: str) -> str:
@@ -386,6 +394,8 @@ package() {{
   install -d "$home"
   # Sources, sans dossiers de build ; seuls les artefacts utiles sont gardés.
   find . -mindepth 1 -maxdepth 1 ! -name 'build*' ! -name '.git' -exec cp -a {{}} "$home/" \\;
+find "$home" -type f -exec chmod 644 {{}} +
+find "$home" -type d -exec chmod 755 {{}} +
   for artefact in {keep}; do
     install -Dm755 "$artefact" "$home/$artefact"
   done

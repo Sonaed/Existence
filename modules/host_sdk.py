@@ -82,7 +82,8 @@ class ModuleHost(QObject):
     # ── état Existence ──
     def _changed(self) -> bool:
         try:
-            stamp = APPS_JSON.stat().st_mtime
+            from modules.compat import apps_path
+            stamp = apps_path().stat().st_mtime
         except OSError:
             stamp = 0
         if stamp == self._stamp:

@@ -13,16 +13,22 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
-APPS_JSON = Path.home() / ".config" / "existence" / "apps.json"
+def apps_path() -> Path:
+    profile = __import__("os").environ.get("EXISTENCE_PROFILE", "").strip()
+    return Path(profile) / "apps.json" if profile else Path.home() / ".config" / "existence" / "apps.json"
+
+
+APPS_JSON = apps_path()
 
 # Modules applicatifs (processus séparés) : leurs hôtes compatibles.
 APP_MODULE_HOSTS = {
-    "nova": ("nebula",),
+    "nova": ("nebula", "ephemeris"),
     "singularity": ("nebula", "nova", "atlas"),
 }
 
 
-def load_apps(path: Path = APPS_JSON) -> list[dict]:
+def load_apps(path: Path | None = None) -> list[dict]:
+    path = path or apps_path()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return [a for a in data if isinstance(a, dict)]

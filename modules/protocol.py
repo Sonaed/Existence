@@ -15,6 +15,8 @@ MODULE_ID_ALIASES = {
     "resource-centre": "resource_center",
     "palette-creator": "palette_creator",
     "gradient-creator": "gradient_creator",
+    "script-creator": "script_creator",
+    "texture-creator": "texture_creator",
 }
 
 
@@ -49,6 +51,9 @@ class ModuleManifest:
     hosts: tuple[str, ...] = ()
     # Présentation dans l'hôte : "dock", "menu" ou "dock+menu".
     ui: str = "dock"
+    api_version: str = "1.0"
+    dependencies: tuple[str, ...] = ()
+    permissions: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -105,6 +110,14 @@ class ModuleRegistry:
         capabilities = capabilities or {}
         accepted = set(capabilities.get("accepts", ()))
         return not accepted or accepted.intersection(manifest.accepts)
+
+    def available(self, module_id: str, provided: dict[str, str] | None = None) -> tuple[bool, list[str]]:
+        manifest = self.manifest(module_id)
+        if manifest is None:
+            return False, [f"module {canonical_module_id(module_id)} is not registered"]
+        provided = provided or {}
+        missing = [dep for dep in manifest.dependencies if dep not in provided]
+        return not missing, missing
 
     def open(self, module_id: str, host_id: str, presentation: str = "dock",
              context: dict[str, Any] | None = None) -> ModuleSession:

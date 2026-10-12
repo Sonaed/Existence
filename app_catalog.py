@@ -17,11 +17,17 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
 import time
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
+
+from app_installation import (InstallationError, discard_staging, installed_release,
+                              managed_target, promote, staging_target,
+                              update_available, validate_catalog_entry)
+from existence_paths import python as existence_python
 
 from PySide6.QtCore import Qt, QProcess, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -199,6 +205,7 @@ class CatalogCard(QFrame):
         entry, page = self.entry, self.page
         app = page.app(entry["id"])
         installed = bool(app and app.get("installed"))
+        ready = page.is_launch_ready(app)
         busy = page.busy.get(entry["id"])
 
         self._clear(self.badges)
@@ -228,13 +235,14 @@ class CatalogCard(QFrame):
             local = installed_version(app)
             remote = entry.get("version", "")
             packaged = str((app or {}).get("working_dir", "")).startswith("/usr/share/existence/")
-            update = bool(remote and local and remote != local and source) and not packaged
+            update = page.has_update(entry)
             where = ("paquet système · mises à jour via pacman / apt" if packaged else
                      (app or {}).get("working_dir") or ("intégré à Existence" if entry.get("bundled") else ""))
-            self.status.setText(("● Installé" + (f" · {entry['name']} {local}" if local else "")
+            state = "● Installé" if ready else "◐ Téléchargé · préparation requise"
+            self.status.setText((state + (f" · {entry['name']} {local}" if local else "")
                                  + (f" · mise à jour {remote}" if update else "")
                                  + (f"  —  {where}" if where else "")))
-            self.status.setStyleSheet(f"color:{C['green']};font-size:11px;")
+            self.status.setStyleSheet(f"color:{C['green'] if ready else C['orange']};font-size:11px;")
             if entry["kind"] == "module":
                 plug = _button("Brancher sur…", primary=not page.is_plugged(entry["id"]))
                 plug.clicked.connect(lambda: page.plug_menu(entry, plug))
@@ -248,7 +256,7 @@ class CatalogCard(QFrame):
                     alone = _button("Ouvrir seul")
                     alone.clicked.connect(lambda: page.open_app(entry))
                     self.actions.addWidget(alone)
-            elif (app or {}).get("exec_path"):
+            elif ready:
                 open_button = _button("Ouvrir", primary=True)
                 open_button.clicked.connect(lambda: page.open_app(entry))
                 self.actions.addWidget(open_button)
@@ -300,6 +308,10 @@ class CatalogPage(QWidget):
         bar.addWidget(reload_button)
         layout.addLayout(bar)
 
+        self.summary = QLabel()
+        self.summary.setStyleSheet(f"color:{C['text2']};font-size:11px;background:transparent;padding:2px 1px;")
+        layout.addWidget(self.summary)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -334,6 +346,34 @@ class CatalogPage(QWidget):
                     and app.get("app_kind") == "orbital_module"
                     and app.get("lifecycle_state", "available") != "closed")
 
+    def has_update(self, entry: dict) -> bool:
+        """Whether this catalogue entry can safely offer an update."""
+        app = self.app(entry["id"]) or {}
+        if not app.get("installed") or not entry.get("git_url"):
+            return False
+        folder = Path(app.get("working_dir") or INSTALL_ROOT / entry["id"])
+        if str(folder).startswith("/usr/share/existence/") or not (folder / ".git").is_dir():
+            return False
+        local = installed_release(folder) or installed_version(app)
+        return update_available(local, entry.get("version", ""))
+
+    @staticmethod
+    def is_launch_ready(app: dict | None) -> bool:
+        if not app or not app.get("installed"):
+            return False
+        executable = str(app.get("exec_path", "")).strip()
+        if not executable:
+            return False
+        folder = Path(app.get("working_dir", "")).expanduser()
+        command = Path(executable).expanduser()
+        executable_ready = (command.exists() or (not command.is_absolute() and folder.is_dir() and (folder / command).exists())
+                            or shutil.which(executable) is not None)
+        if not executable_ready:
+            return False
+        args = list(app.get("exec_args") or [])
+        return not (args and folder.is_dir() and Path(args[0]).suffix in {".py", ".sh"}
+                    and not (folder / args[0]).is_file())
+
     def universes(self) -> list[dict]:
         return [a for a in self.hub.apps if a.get("installed", True)
                 and (a.get("app_kind") == "universe" or a.get("standalone") or a.get("id") in {"nova", "singularity"})]
@@ -349,6 +389,17 @@ class CatalogPage(QWidget):
                     pass
         for card in self.cards:
             card.refresh()
+        self._update_summary()
+
+    def _update_summary(self) -> None:
+        if not hasattr(self, "catalog"):
+            return
+        installed = sum(1 for entry in self.catalog if (self.app(entry["id"]) or {}).get("installed"))
+        updates = sum(1 for entry in self.catalog if self.has_update(entry))
+        self.summary.setText(
+            f"{installed} installé(s) · {len(self.catalog)} application(s) et module(s)"
+            + (f" · {updates} mise(s) à jour disponible(s)" if updates else " · Tout est à jour")
+        )
 
     # ── construction ──
     def reload(self, remote: bool = False) -> None:
@@ -381,6 +432,7 @@ class CatalogPage(QWidget):
             self.body_layout.addWidget(grid_host)
         self.body_layout.addStretch(1)
         self._filter(self.search.text())
+        self._update_summary()
 
     def _filter(self, text: str) -> None:
         needle = text.strip().lower()
@@ -447,7 +499,12 @@ class CatalogPage(QWidget):
                     self.hub.plug_module(entry["id"], "", entry["host"], False)
                     self._after_hub_change()
             return
-        target = INSTALL_ROOT / entry["id"]
+        try:
+            validate_catalog_entry(entry)
+            target = managed_target(INSTALL_ROOT, entry["id"])
+        except InstallationError as exc:
+            QMessageBox.warning(self, "Installation", str(exc))
+            return
         if target.exists() and any(target.iterdir()):
             self._finish_install(entry, target)
             return
@@ -455,11 +512,23 @@ class CatalogPage(QWidget):
             QMessageBox.warning(self, "Installation", "git est introuvable sur ce système.")
             return
         INSTALL_ROOT.mkdir(parents=True, exist_ok=True)
+        staging = staging_target(INSTALL_ROOT, entry["id"])
         args = ["clone", "--depth", "1"]
         if entry.get("branch"):
             args += ["--branch", entry["branch"]]
-        args += [entry["git_url"], str(target)]
-        self._run(entry, args, "Téléchargement…", lambda ok: ok and self._finish_install(entry, target))
+        args += [entry["git_url"], str(staging)]
+
+        def done(ok: bool) -> None:
+            if not ok:
+                discard_staging(staging)
+                return
+            try:
+                self._finish_install(entry, promote(staging, target))
+            except InstallationError as exc:
+                discard_staging(staging)
+                QMessageBox.warning(self, "Installation", str(exc))
+
+        self._run(entry, args, "Téléchargement sécurisé…", done)
 
     def update_app(self, entry: dict) -> None:
         app = self.app(entry["id"]) or {}
@@ -468,6 +537,19 @@ class CatalogPage(QWidget):
             QMessageBox.information(self, "Mise à jour",
                                     f"{entry['name']} n'est pas un dépôt git ({folder}).\n"
                                     "Mets-le à jour à la main ou réinstalle-le depuis le catalogue.")
+            return
+        try:
+            dirty = subprocess.run(["git", "-C", str(folder), "status", "--porcelain"],
+                                   capture_output=True, text=True, check=False).stdout.strip()
+        except OSError as exc:
+            QMessageBox.warning(self, "Mise à jour", f"Impossible de vérifier l'installation : {exc}")
+            return
+        if dirty:
+            QMessageBox.information(
+                self, "Mise à jour suspendue",
+                f"{entry['name']} contient des modifications locales. Existence ne les écrase pas.\n\n"
+                "Valide, mets de côté ou annule ces modifications dans l’app concernée, puis relance la mise à jour.",
+            )
             return
         self._run(entry, ["-C", str(folder), "pull", "--ff-only"], "Mise à jour…",
                   lambda ok: ok and self._finish_install(entry, folder))
@@ -511,14 +593,23 @@ class CatalogPage(QWidget):
                    "orbits": [entry["host"]] if entry["kind"] == "module" and entry.get("host") else []}
             self.hub.apps.append(app)
         launch = list(entry.get("launch") or ["python", "main.py"])
-        manifest = folder / "existence-manifest.json"
+        # A catalogue entry is portable, whereas the persisted app record must
+        # be executable now.  Resolve the interpreter once to the same runtime
+        # that launched Existence instead of relying on whichever ``python`` is
+        # first in a later process' PATH.
+        if launch and launch[0] in {"python", "python3"}:
+            launch[0] = existence_python()
+        manifest = next((candidate for candidate in (folder / "existence-manifest.json", folder / "EXISTENCE" / "manifest.json")
+                         if candidate.is_file()), None)
+        installed_version_value = installed_release(folder) or entry.get("version", app.get("version", ""))
         app.update({
             "installed": True, "install_type": "catalog", "git_url": entry.get("git_url", ""),
             "working_dir": str(folder), "exec_path": launch[0], "exec_args": launch[1:],
-            "version": entry.get("version", app.get("version", "")),
+            "version": installed_version_value,
             "lifecycle_state": "available", "installed_at": time.time(),
+            "last_updated_at": time.time(), "install_origin": "catalog",
         })
-        if manifest.exists():
+        if manifest is not None:
             app["manifest_path"] = str(manifest)
         self._commit()
         notes = []
@@ -532,6 +623,9 @@ class CatalogPage(QWidget):
     def uninstall(self, entry: dict) -> None:
         app = self.app(entry["id"])
         if not app:
+            return
+        if entry["id"] in getattr(self.hub, "_processes", {}):
+            QMessageBox.information(self, "Désinstaller", "Ferme l’application avant de la désinstaller.")
             return
         folder = Path(app.get("working_dir") or "")
         owned = app.get("install_type") == "catalog" and INSTALL_ROOT in folder.parents
@@ -706,7 +800,7 @@ class WormholesPage(QWidget):
             f"QHeaderView::section{{background:{C['bg2']};color:{C['text2']};border:none;padding:6px;}}"
             f"QTreeWidget::item{{padding:4px;}}QTreeWidget::item:selected{{background:{C['border_h']};}}")
         self.links = QTreeWidget()
-        self.links.setHeaderLabels(["Nom", "Entre", "Révision", "Dernière modif. par", "Quand"])
+        self.links.setHeaderLabels(["Nom", "Entre", "Révision", "État", "Couleur / profil", "Quand"])
         self.links.setRootIsDecorated(False)
         self.links.setAlternatingRowColors(True)
         self.links.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -744,8 +838,18 @@ class WormholesPage(QWidget):
         self.links.clear()
         for record in sorted(self.hole.links("*"), key=lambda r: -float(r.get("updated_at", 0))):
             when = time.strftime("%d/%m %H:%M:%S", time.localtime(float(record.get("updated_at", 0))))
+            status = self.hole.link_status(record)
+            colour = status.get("colour", {})
+            colour_text = colour.get("mode", "") or "Profil non annoncé"
+            if colour.get("profile"):
+                colour_text += " · " + str(colour["profile"])
             item = QTreeWidgetItem([record.get("name", ""), " ⇄ ".join(self._name(a) for a in record.get("apps", [])),
-                                    str(record.get("rev", 1)), self._name(record.get("writer", "")), when])
+                                    str(record.get("rev", 1)), status["label"], colour_text, when])
+            item.setToolTip(3, " · ".join(
+                f"{self._name(app)} : r{detail['revision']}" + (" · en attente" if detail["waiting"] else "")
+                for app, detail in status.get("apps", {}).items()))
+            if colour.get("icc_profile_sha256"):
+                item.setToolTip(4, "ICC SHA-256 : " + str(colour["icc_profile_sha256"]))
             item.setData(0, Qt.ItemDataRole.UserRole, record["id"])
             self.links.addTopLevelItem(item)
             if record["id"] == selected:

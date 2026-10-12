@@ -33,10 +33,18 @@ import uuid
 from pathlib import Path
 from typing import Any, Iterable
 
+# Public, persisted protocol.  Keep the reader deliberately tolerant: a live
+# link is shared state and an older app must still be able to open it.
+LINKS_FORMAT = "existence.wormhole-links.v2"
+LINK_SCHEMA = "existence.wormhole-link.v2"
+
 # Apps qui savent recevoir par wormhole, et ce qu'elles acceptent.
 WORMHOLE_APPS: dict[str, dict[str, Any]] = {
+    "atlas": {"name": "Atlas", "accepts": ("image", "vector", "document"), "live": True},
     "nebula": {"name": "Nebula", "accepts": ("image",), "live": True},
+    "ephemeris": {"name": "Ephemeris", "accepts": ("image",), "live": True},
     "nova": {"name": "Nova", "accepts": ("image", "raw"), "live": True},
+    "cosmos": {"name": "Cosmos", "accepts": ("image", "document", "resource"), "live": True},
     "singularity": {"name": "Singularity", "accepts": ("image",), "live": False},
 }
 
@@ -45,6 +53,9 @@ APPS_JSON = Path.home() / ".config" / "existence" / "apps.json"
 
 
 def default_root() -> Path:
+    profile = os.environ.get("EXISTENCE_PROFILE", "").strip()
+    if profile:
+        return Path(profile) / "wormholes"
     configured = os.environ.get("CREATIVE_SYSTEM_DATA_HOME", "").strip()
     base = Path(configured) if configured else Path.home() / ".local" / "share" / "CreativeSystem"
     return base / "wormholes"
@@ -52,7 +63,13 @@ def default_root() -> Path:
 
 def _atomic_write(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=".wh-", suffix=".tmp", dir=path.parent)
+    try:
+        descriptor, temporary = tempfile.mkstemp(prefix=".wh-", suffix=".tmp", dir=path.parent)
+    except OSError:
+        fallback = Path(tempfile.gettempdir()) / "Existence" / "wormholes" / path.relative_to(default_root())
+        fallback.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary = tempfile.mkstemp(prefix=".wh-", suffix=".tmp", dir=fallback.parent)
+        path = fallback
     with os.fdopen(descriptor, "wb") as handle:
         handle.write(data)
     os.replace(temporary, path)
@@ -76,8 +93,13 @@ class Wormhole:
     def __init__(self, app_id: str, root: str | Path | None = None) -> None:
         self.app_id = app_id
         self.root = Path(root) if root is not None else default_root()
-        for sub in ("alive", "inbox", "store"):
-            (self.root / sub).mkdir(parents=True, exist_ok=True)
+        try:
+            for sub in ("alive", "inbox", "store"):
+                (self.root / sub).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            self.root = Path(tempfile.gettempdir()) / "Existence" / "wormholes"
+            for sub in ("alive", "inbox", "store"):
+                (self.root / sub).mkdir(parents=True, exist_ok=True)
         self.inbox = self.root / "inbox" / app_id
         self.inbox.mkdir(parents=True, exist_ok=True)
         self.links_path = self.root / "links.json"
@@ -135,8 +157,42 @@ class Wormhole:
             return {}
 
     def _write_links(self, links: dict[str, dict]) -> None:
-        _atomic_write(self.links_path, json.dumps({"format": "ExistenceWormholeLinks", "links": links},
+        _atomic_write(self.links_path, json.dumps({"format": LINKS_FORMAT, "links": links},
                                                   indent=2, ensure_ascii=False).encode())
+
+    @staticmethod
+    def _normalise_meta(meta: dict | None, *, revision: int) -> dict:
+        """Return the portable metadata advertised with every live revision.
+
+        App-specific keys remain at the top level for compatibility.  The
+        canonical ``resource``/``colour`` blocks make version, ICC provenance
+        and sync state discoverable to every universe without interpreting a
+        PNG, TIFF or native document.
+        """
+        values = dict(meta or {})
+        colour = dict(values.get("colour") or values.get("color") or {})
+        mode = values.get("color_mode", colour.get("mode", ""))
+        profile = values.get("color_profile", colour.get("profile", ""))
+        profile_sha = values.get("icc_profile_sha256", colour.get("icc_profile_sha256", ""))
+        embedded = values.get("icc_profile_embedded", colour.get("icc_profile_embedded", False))
+        values["resource"] = {**dict(values.get("resource") or {}), "version": revision}
+        values["colour"] = {
+            **colour, "mode": str(mode or ""), "profile": str(profile or ""),
+            "icc_profile_sha256": str(profile_sha or ""),
+            "icc_profile_embedded": bool(embedded),
+        }
+        # American spelling remains available for clients written before v2.
+        values["color"] = dict(values["colour"])
+        return values
+
+    def _normalise_record(self, record: dict) -> dict:
+        """Upgrade an in-memory legacy link without rewriting it on read."""
+        value = dict(record)
+        revision = int(value.get("rev", 1) or 1)
+        value.setdefault("schema", LINK_SCHEMA)
+        value["meta"] = self._normalise_meta(value.get("meta"), revision=revision)
+        value.setdefault("acknowledged", {})
+        return value
 
     def _log(self, event: str, **fields) -> None:
         record = {"time": time.time(), "event": event, "app": self.app_id, **fields}
@@ -170,11 +226,14 @@ class Wormhole:
             link_id = message_id
             with self._locked():
                 links = self._read_links()
+                now = time.time()
                 links[link_id] = {
                     "id": link_id, "name": message["name"], "kind": kind, "file": str(stored),
                     "apps": [self.app_id, target], "origin": self.app_id, "rev": 1,
-                    "writer": self.app_id, "created_at": time.time(), "updated_at": time.time(),
+                    "schema": LINK_SCHEMA, "writer": self.app_id, "created_at": now, "updated_at": now,
                     "refs": {self.app_id: dict(meta or {})},
+                    "acknowledged": {self.app_id: {"revision": 1, "at": now}},
+                    "meta": self._normalise_meta(meta, revision=1),
                 }
                 self._write_links(links)
             message["link"] = link_id
@@ -230,10 +289,12 @@ class Wormhole:
     # ── liens en direct ──
     def links(self, app_id: str | None = None) -> list[dict]:
         who = app_id or self.app_id
-        return [l for l in self._read_links().values() if app_id == "*" or who in l.get("apps", [])]
+        return [self._normalise_record(l) for l in self._read_links().values()
+                if app_id == "*" or who in l.get("apps", [])]
 
     def link(self, link_id: str) -> dict | None:
-        return self._read_links().get(link_id)
+        record = self._read_links().get(link_id)
+        return self._normalise_record(record) if record else None
 
     def attach(self, link_id: str, ref: dict) -> None:
         """Mémorise ce que le lien désigne chez moi (ex. l'id du calque)."""
@@ -243,21 +304,85 @@ class Wormhole:
                 links[link_id].setdefault("refs", {})[self.app_id] = dict(ref)
                 self._write_links(links)
 
-    def publish(self, link_id: str, source: str | Path | None = None, data: bytes | None = None) -> int:
-        """Publie une nouvelle version du lien ; retourne la nouvelle révision."""
+    def acknowledge(self, link_id: str, revision: int | None = None, *, meta: dict | None = None) -> None:
+        """Confirm that this app has applied a live revision.
+
+        Acknowledgements are advisory and never prevent a reader from opening
+        a file.  They only make the UI's sync state truthful.
+        """
+        with self._locked():
+            links = self._read_links()
+            record = links.get(link_id)
+            if record is None:
+                raise KeyError(link_id)
+            current = int(record.get("rev", 1))
+            seen = current if revision is None else min(current, max(0, int(revision)))
+            item = {"revision": seen, "at": time.time()}
+            if meta:
+                item["meta"] = dict(meta)
+            record.setdefault("acknowledged", {})[self.app_id] = item
+            self._write_links(links)
+        self._log("acknowledge", link=link_id, revision=seen)
+
+    def link_status(self, record: dict | str) -> dict[str, Any]:
+        """Describe availability and acknowledgement state for an existing link."""
+        link = self.link(record) if isinstance(record, str) else self._normalise_record(record)
+        if not link:
+            return {"state": "missing", "label": "Introuvable", "revision": 0, "apps": {}}
+        revision = int(link.get("rev", 1))
+        states: dict[str, dict[str, Any]] = {}
+        all_synced = True
+        for app_id in link.get("apps", []):
+            acknowledgement = (link.get("acknowledged") or {}).get(app_id, {})
+            applied = int(acknowledgement.get("revision", 0) or 0)
+            alive = self.is_alive(app_id)
+            waiting = applied < revision
+            states[app_id] = {"alive": alive, "revision": applied, "waiting": waiting}
+            all_synced = all_synced and not waiting
+        if all_synced:
+            state, label = "synced", "Synchronisé"
+        elif any(v["alive"] and v["waiting"] for v in states.values()):
+            state, label = "syncing", "Synchronisation…"
+        else:
+            state, label = "pending", "En attente d’une app"
+        return {"state": state, "label": label, "revision": revision, "apps": states,
+                "colour": link.get("meta", {}).get("colour", {})}
+
+    def publish(self, link_id: str, source: str | Path | None = None, data: bytes | None = None,
+                *, name: str | None = None, meta: dict | None = None) -> int:
+        """Publish content and colour metadata together, retaining the live link.
+
+        A named payload may change its format (e.g. RGBA PNG to CMYK TIFF).
+        In that case use an immutable revision file: existing readers can finish
+        reading the old content while the new record is committed atomically.
+        Calls without name retain the original protocol's stable-file behavior.
+        """
+        if source is None and data is None:
+            raise ValueError("Rien à publier")
         with self._locked():
             links = self._read_links()
             record = links.get(link_id)
             if record is None:
                 raise KeyError(link_id)
             target = Path(record["file"])
+            revision = int(record.get("rev", 1)) + 1
+            if name is not None:
+                filename = Path(name).name
+                if filename in ("", ".", ".."):
+                    raise ValueError("Nom de contenu invalide")
+                target = target.parent / f"r{revision:06d}-{filename}"
             if data is not None:
                 _atomic_write(target, data)
             elif source is not None:
                 _atomic_write(target, Path(source).read_bytes())
-            record["rev"] = int(record.get("rev", 1)) + 1
+            record["file"] = str(target)
+            record["rev"] = revision
+            record["schema"] = LINK_SCHEMA
+            record["meta"] = self._normalise_meta(meta if meta is not None else record.get("meta"),
+                                                   revision=revision)
             record["writer"] = self.app_id
             record["updated_at"] = time.time()
+            record.setdefault("acknowledged", {})[self.app_id] = {"revision": revision, "at": record["updated_at"]}
             self._write_links(links)
             return record["rev"]
 
@@ -309,4 +434,4 @@ def load_for(app_id: str) -> Wormhole | None:
         return None
 
 
-__all__ = ["Wormhole", "WORMHOLE_APPS", "default_root", "load_for"]
+__all__ = ["Wormhole", "WORMHOLE_APPS", "LINKS_FORMAT", "LINK_SCHEMA", "default_root", "load_for"]

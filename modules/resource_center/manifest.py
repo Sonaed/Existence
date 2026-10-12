@@ -5,7 +5,7 @@ from .catalog import RESOURCE_CATEGORIES
 MANIFEST = ModuleManifest(
     id="resource_center",
     name="Resources",
-    version="26.0",
+    version="26.1.0",
     module_type="existence_module",
     accepts=("resource", "resource_bundle", "blend_definition", "blend_result"),
     emits=("resource", "resource_bundle", "blend_definition", "blend_result"),
